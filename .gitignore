@@ -216,3 +216,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# C build artifacts
+process/memmap
+*.dSYM/
+*.o
