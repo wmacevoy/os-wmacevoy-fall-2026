@@ -1,6 +1,10 @@
 # The barrier, by hand and on the clock.
 CC     = cc
-CFLAGS = -std=c11 -Wall -Wextra -O0 -g
+# _POSIX_C_SOURCE is not decoration: -std=c11 alone is strict ISO C, and on
+# glibc that HIDES clock_gettime, which is POSIX, not C. Apple's headers leak
+# it regardless, so the container is where you find this out. Fitting, for a
+# demo about where the boundary is drawn.
+CFLAGS = -std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -O0 -g
 
 all: raw cost
 

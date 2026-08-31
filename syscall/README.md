@@ -11,6 +11,8 @@ the kernel entry point. If they could, they would never bother smashing a frame.
 
     make run          # both demos
     make disasm       # find the trap instruction in your own binary
+    ./build.sh        # the same source, built for x86-64 AND arm64 Linux
+    ./run.sh          # run both — one natively, one emulated
 
 ## 1. `raw.c` — the same idea, four ways
 
@@ -32,6 +34,27 @@ out of your hands.
 
 Then `make disasm` and find the identical instruction inside libc's `write()`.
 Same instruction. One of them you wrote.
+
+### Both Linux rows at once
+
+`make disasm` shows you one row of that table — whichever ISA you happen to
+own. The container shows you two:
+
+    ./build.sh                    # builds raw.c twice: linux/amd64, linux/arm64
+    ./run.sh                      # runs both
+    ./run.sh amd64 make disasm    # or just one
+
+    linux/arm64 · native      d4000001    svc  #0x0
+    linux/amd64 · emulated    0f 05       syscall
+
+One source file, one identical line of output, two different instructions —
+which is the claim in the table, demonstrated rather than asserted.
+
+One of those containers is your own ISA and one is not. The foreign one still
+traps correctly, because a binfmt handler is translating its instruction into a
+real one on the host kernel: Rosetta on an Apple Silicon Mac, qemu elsewhere.
+That is worth a sentence in your writeup. Take your **timings** from the native
+side, though — on the emulated side you are measuring the translator.
 
 ## 2 and 3. `cost.c` — weigh it
 
@@ -76,10 +99,10 @@ draws it at the kernel; macOS draws it at a library, and treats the kernel as an
 implementation detail. Same concept, different layer — and it changes what a
 program is allowed to depend on.
 
-**Do the work in the Linux container** (`../process/` has the pattern). Mac
-users get a Linux userland and stable numbers; then write a paragraph on what
-that container is actually doing for you here, which is the second half of the
-assignment.
+**Do the work in the Linux container** — `./build.sh`, then `./run.sh --shell
+amd64` to work inside it. Mac users get a Linux userland and stable numbers;
+then write a paragraph on what that container is actually doing for you here,
+which is the second half of the assignment.
 
 ## What to hand in
 
