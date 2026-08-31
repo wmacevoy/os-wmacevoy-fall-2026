@@ -221,3 +221,6 @@ __marimo__/
 process/memmap
 *.dSYM/
 *.o
+
+# Viki state
+.viki/
