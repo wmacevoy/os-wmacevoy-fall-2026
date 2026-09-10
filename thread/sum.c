@@ -7,6 +7,8 @@
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
+#include <unistd.h>
+#include <time.h>
 
 // [a,b) is the sum range for this worker's job
 // ans = sum(sqrt(k),k=a..b-1)
@@ -41,7 +43,8 @@ static void *worker(void *arg)
 int main(int argc, const char *argv[])
 {
   int n = 1000000;
-  int threads = 8;
+  int threads = 4;
+  int timing = 0;
 
   // process --n <#>, --threads <#>in cli
   for (int argi=1; argi<argc; ++argi) {
@@ -57,8 +60,12 @@ int main(int argc, const char *argv[])
 	continue;
       }
     }
+    else if (strcmp(argv[argi],"--time")==0) {
+      timing = 1;
+      continue;
+    }
     fprintf(stderr,
-	    "usage: %s [--n <#>] [--threads <#>]\n",
+	    "usage: %s [--n <#>] [--threads <#>] [--time]\n",
 	    argv[0]);
 
     return 1;
@@ -75,12 +82,12 @@ int main(int argc, const char *argv[])
     return 1;
   }
 
+  // time the threaded part only, not startup or argument parsing
+  struct timespec t0, t1;
+  clock_gettime(CLOCK_MONOTONIC, &t0);
+
   // initialize work (sum) and workers...
   //
-  // t is long so that n*t is done in 64 bits.  --n allows 1e9 and --threads
-  // allows 1000, and that product overflows an int by a factor of 500: the
-  // wrapped value comes out negative, a<b picks up a negative range, and the
-  // answer is a quiet nan.  Widening the counter fixes it with no cast.
   for (long t = 0; t<threads; ++t) {
     sums[t].a = n*t/threads;
     sums[t].b = n*(t+1)/threads;
@@ -106,10 +113,19 @@ int main(int argc, const char *argv[])
     total = total + result->ans;
   }
 
+  clock_gettime(CLOCK_MONOTONIC, &t1);
+
   // %.17g, not %lg: a double holds about 17 significant digits, and the
   // interesting part of this answer is in the last few of them -- run it at
   // different --threads and watch the tail digits move.
+
   printf("sum(sqrt(k),k=0..%d)=%.17g on %d threads\n", n-1, total, threads);
+
+  if (timing) {
+    // CLOCK_MONOTONIC, not REALTIME: it does not jump when the clock is set.
+    double secs = (t1.tv_sec - t0.tv_sec) + 1e-9*(t1.tv_nsec - t0.tv_nsec);
+    printf("  %.4f s, %.3f ns/element\n", secs, secs/n*1e9);
+  }
 
   free(worker_threads);
   free(sums);

@@ -1,30 +1,16 @@
-CC      = cc
-CFLAGS  = -std=c11 -Wall -Wextra -g -O3 -pthread
-CXX      = c++
-CXXFLAGS = -std=c++17 -Wall -Wextra -g -O3 -pthread
-TARGET  = hello
+COMMON_FLAGS = -Wall -Wextra -g -O3 -pthread
+CFLAGS  = -std=c11 $(COMMON_FLAGS)
+CXXFLAGS = -std=c++17 $(COMMON_FLAGS)
+LDLIBS  = -lm
 
-all: $(TARGET) sum sumxx
+all: hello sum sumxx
 
-$(TARGET): hello.c
-	$(CC) $(CFLAGS) -o $@ $<
-
+hello: hello.c
 sum : sum.c
-	$(CC) $(CFLAGS) -o $@ $<
-
 sumxx : sumxx.cpp
-	$(CXX) $(CXXFLAGS) -o $@ $<
-
-run: $(TARGET)
-	./$(TARGET)
-
-# Run it a few times: the process id is one per run, the thread ids are two.
-twice: $(TARGET)
-	./$(TARGET)
-	@echo
-	./$(TARGET)
 
 clean:
-	rm -rf $(TARGET) sum sumxx *.dSYM
+	rm -rf hello sum sumxx *.dSYM
 
-.PHONY: all run twice clean
+.PHONY: all run clean
+
