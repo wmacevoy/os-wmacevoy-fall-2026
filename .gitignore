@@ -224,3 +224,8 @@ process/memmap
 
 # Viki state
 .viki/
+
+# Editor backups and autosaves
+*~
+\#*\#
+.\#*
