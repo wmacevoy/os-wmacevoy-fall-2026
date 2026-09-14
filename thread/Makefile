@@ -6,11 +6,12 @@ LDLIBS  = -lm
 all: hello sum sumxx
 
 hello: hello.c
+philosophers : philosophers.c
 sum : sum.c
 sumxx : sumxx.cpp
 
 clean:
-	rm -rf hello sum sumxx *.dSYM
+	rm -rf hello sum sumxx philosophers *.dSYM
 
 .PHONY: all run clean
 
