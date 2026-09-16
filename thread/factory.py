@@ -20,7 +20,7 @@
 #
 #   floor.lock   the pile of finished boxes on the factory floor
 #   door         the dock door: one forklift fits through at a time
-#   bay.lock     a loading bay: which truck is parked there, how much room it has
+#   dock.lock    the loading bays: which truck is parked where, how much room
 #   print_lock   stdout, so log lines never mix
 #
 # Most locks guard data and are held for an instant. The door guards a
@@ -31,9 +31,34 @@
 # and no deadlock (compare philosophers.c).
 #
 # When a thread has to wait for something -- a box, an empty bay, a full truck
-# -- it checks under the lock, lets go, naps briefly, and checks again. Never
-# sleep while holding a data lock: nobody else could make the progress you are
-# waiting for.
+# -- it waits on a condition variable (threading.Condition). wait() unlocks
+# the mutex, sleeps until another thread calls notify(), and locks the mutex
+# again before it returns. Every wait has the same shape:
+#
+#   with lock:
+#       while not <what we need>:
+#           condition.wait()
+#       <use it>
+#
+# Always a while, never an if: by the time a woken thread has the mutex back,
+# another thread may have taken the box first. (pthread_cond_wait may even
+# return when nobody signaled.)
+#
+# Whoever changes the data calls notify() to wake one waiter, or notify_all()
+# to wake them all, while still holding the lock:
+#
+#   floor.changed        a box was built, or the machine finished
+#   dock.has_room        a truck parked with room to fill
+#   dock.has_empty_bay   a truck pulled out
+#   bay.full             the truck in this bay just got its last box
+#
+# A condition variable belongs to one mutex, and everything its while loop
+# tests must be guarded by that mutex. A forklift waits for room on *any*
+# truck, so a single lock guards all of the bays, and the dock's and the bays'
+# condition variables all share it.
+#
+# These map directly onto pthread_cond_wait(), pthread_cond_signal() and
+# pthread_cond_broadcast().
 #
 
 import argparse
@@ -41,8 +66,6 @@ import random
 import sys
 import threading
 import time
-
-POLL = 0.01  # seconds to nap before checking again
 
 START = time.monotonic()
 print_lock = threading.Lock()
@@ -65,17 +88,28 @@ class Floor:
 
     def __init__(self):
         self.lock = threading.Lock()
+        self.changed = threading.Condition(self.lock)
         self.boxes = 0  # on the floor right now
         self.made = 0  # built so far
         self.done = False  # the machine has built its last box
 
 
+class Dock:
+    """The loading bays. One lock guards all of them."""
+
+    def __init__(self, bays):
+        self.lock = threading.Lock()
+        self.has_room = threading.Condition(self.lock)
+        self.has_empty_bay = threading.Condition(self.lock)
+        self.bays = [Bay(n, self.lock) for n in range(1, bays + 1)]
+
+
 class Bay:
     """A loading bay on the dock. Holds at most one truck."""
 
-    def __init__(self, number):
+    def __init__(self, number, lock):
         self.number = number
-        self.lock = threading.Lock()
+        self.full = threading.Condition(lock)  # lock is the dock's
         self.truck = None  # name of the parked truck, or None
         self.room = 0  # boxes the parked truck can still take
         self.shipped = 0  # boxes that have left from this bay
@@ -93,23 +127,25 @@ def machine(floor, total):
             floor.boxes += 1
             floor.made += 1
             log(f"built box #{floor.made} ({floor.boxes} on the floor)")
+            floor.changed.notify()  # one new box, so wake one forklift
     with floor.lock:
         floor.done = True
+        floor.changed.notify_all()  # every waiting forklift can go park
     log("finished the order")
 
 
-def forklift(floor, door, bays):
+def forklift(floor, door, dock):
     while take_box(floor):
         drive_through(door, "out to the dock")
-        load_truck(bays)
+        load_truck(dock)
         drive_through(door, "back to the floor")
     log("floor is clear, parking")
 
 
-def truck(bays, trips, capacity):
+def truck(dock, trips, capacity):
     for trip in range(1, trips + 1):
-        bay = park(bays, capacity)
-        leave_when_full(bay, capacity)
+        bay = park(dock, capacity)
+        leave_when_full(dock, bay, capacity)
         busy(0.4, 0.8)  # out on delivery
         log(f"delivered load {trip} of {trips}")
     log("done for the day")
@@ -122,15 +158,14 @@ def truck(bays, trips, capacity):
 
 def take_box(floor):
     """Pick up a box. Returns False once there will never be another."""
-    while True:
-        with floor.lock:
-            if floor.boxes > 0:
-                floor.boxes -= 1
-                log(f"picks up a box ({floor.boxes} left on the floor)")
-                return True
-            if floor.done:
-                return False
-        time.sleep(POLL)  # floor is empty for now
+    with floor.lock:
+        while floor.boxes == 0 and not floor.done:
+            floor.changed.wait()
+        if floor.boxes == 0:
+            return False
+        floor.boxes -= 1
+        log(f"picks up a box ({floor.boxes} left on the floor)")
+        return True
 
 
 def drive_through(door, where):
@@ -139,41 +174,40 @@ def drive_through(door, where):
         busy(0.05, 0.10)
 
 
-def load_truck(bays):
+def load_truck(dock):
     """Put the box we are carrying on any parked truck with room."""
-    while True:
-        for bay in bays:
-            with bay.lock:
-                if bay.room > 0:
-                    bay.room -= 1
-                    log(f"loads {bay.truck} in bay {bay.number} "
-                        f"(room for {bay.room} more)")
-                    return
-        time.sleep(POLL)  # no truck with room yet
+    with dock.lock:
+        while not any(bay.room > 0 for bay in dock.bays):
+            dock.has_room.wait()
+        bay = next(bay for bay in dock.bays if bay.room > 0)
+        bay.room -= 1
+        log(f"loads {bay.truck} in bay {bay.number} "
+            f"(room for {bay.room} more)")
+        if bay.room == 0:
+            bay.full.notify()  # wake the truck parked here
 
 
-def park(bays, capacity):
+def park(dock, capacity):
     """Back into any empty bay."""
-    while True:
-        for bay in bays:
-            with bay.lock:
-                if bay.truck is None:
-                    bay.truck = threading.current_thread().name
-                    bay.room = capacity
-                    log(f"parks in bay {bay.number}")
-                    return bay
-        time.sleep(POLL)  # every bay is taken
+    with dock.lock:
+        while not any(bay.truck is None for bay in dock.bays):
+            dock.has_empty_bay.wait()
+        bay = next(bay for bay in dock.bays if bay.truck is None)
+        bay.truck = threading.current_thread().name
+        bay.room = capacity
+        log(f"parks in bay {bay.number}")
+        dock.has_room.notify(capacity)  # wake up to that many forklifts
+        return bay
 
 
-def leave_when_full(bay, capacity):
-    while True:
-        with bay.lock:
-            if bay.room == 0:
-                bay.truck = None
-                bay.shipped += capacity
-                log(f"is full, pulls out of bay {bay.number}")
-                return
-        time.sleep(POLL)  # still loading
+def leave_when_full(dock, bay, capacity):
+    with dock.lock:
+        while bay.room > 0:
+            bay.full.wait()
+        bay.truck = None
+        bay.shipped += capacity
+        log(f"is full, pulls out of bay {bay.number}")
+        dock.has_empty_bay.notify()  # one bay opened, so wake one truck
 
 
 def main():
@@ -196,17 +230,17 @@ def main():
 
     floor = Floor()
     door = threading.Lock()
-    bays = [Bay(n) for n in range(1, args.bays + 1)]
+    dock = Dock(args.bays)
 
     workers = [threading.Thread(target=machine, args=(floor, total),
                                 name="machine")]
     for n in range(1, args.forklifts + 1):
         workers.append(threading.Thread(target=forklift,
-                                        args=(floor, door, bays),
+                                        args=(floor, door, dock),
                                         name=f"forklift{n}"))
     for n in range(1, args.trucks + 1):
         workers.append(threading.Thread(target=truck,
-                                        args=(bays, args.trips, args.capacity),
+                                        args=(dock, args.trips, args.capacity),
                                         name=f"truck{n}"))
 
     for worker in workers:
@@ -218,7 +252,7 @@ def main():
 
     # Every worker has exited, so nobody else can touch the shared state now:
     # reading it without the locks is safe.
-    shipped = sum(bay.shipped for bay in bays)
+    shipped = sum(bay.shipped for bay in dock.bays)
     print(f"\nordered {total}, built {floor.made}, shipped {shipped}, "
           f"{floor.boxes} left on the floor")
     return 0 if floor.made == shipped == total and floor.boxes == 0 else 1
