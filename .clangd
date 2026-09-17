@@ -1,0 +1,30 @@
+# How clangd (the editor's C/C++ language server) should read the course
+# examples. The flags match the Makefiles: C as C11, C++ as C++17. They only
+# affect what the editor shows, not how anything builds.
+CompileFlags:
+  Add: [-Wall, -Wextra]
+---
+If:
+  PathMatch: .*\.c
+CompileFlags:
+  Add: [-std=c11]
+---
+If:
+  PathMatch: .*\.(cpp|hpp)
+CompileFlags:
+  Add: [-std=c++17]
+---
+If:
+  PathMatch: thread/.*
+CompileFlags:
+  Add: [-pthread]
+---
+If:
+  PathMatch: (fork|syscall)/.*\.c
+CompileFlags:
+  Add: [-D_POSIX_C_SOURCE=200809L]
+---
+If:
+  PathMatch: fork/.*\.c
+CompileFlags:
+  Add: [-Wpedantic]
