@@ -32,7 +32,7 @@
 #
 # When a thread has to wait for something -- a box, an empty bay, a full truck
 # -- it waits on a condition variable (threading.Condition). wait() unlocks
-# the mutex, sleeps until another thread calls notify(), and locks the mutex
+# the mutex, sleeps until another thread notifies it, and locks the mutex
 # again before it returns. Every wait has the same shape:
 #
 #   with lock:
@@ -44,21 +44,28 @@
 # another thread may have taken the box first. (pthread_cond_wait may even
 # return when nobody signaled.)
 #
-# Whoever changes the data calls notify() to wake one waiter, or notify_all()
-# to wake them all, while still holding the lock:
+# Whoever changes the data calls notify_all() on the condition variable that
+# change might satisfy, while still holding the lock:
 #
 #   floor.changed        a box was built, or the machine finished
 #   dock.has_room        a truck parked with room to fill
 #   dock.has_empty_bay   a truck pulled out
 #   bay.full             the truck in this bay just got its last box
 #
+# notify_all() wakes every waiter. Each one rechecks its while loop, and any
+# that still has nothing to do goes back to sleep. That keeps correctness easy
+# to see: if every loop tests the right thing and every change notifies, no
+# thread sleeps through what it was waiting for. notify() wakes just one
+# waiter, which saves wakeups but is only correct if the one it wakes is sure
+# to use the change -- a subtle argument, and easy to get wrong.
+#
 # A condition variable belongs to one mutex, and everything its while loop
 # tests must be guarded by that mutex. A forklift waits for room on *any*
 # truck, so a single lock guards all of the bays, and the dock's and the bays'
 # condition variables all share it.
 #
-# These map directly onto pthread_cond_wait(), pthread_cond_signal() and
-# pthread_cond_broadcast().
+# wait() and notify_all() are pthread_cond_wait() and pthread_cond_broadcast()
+# (notify() is pthread_cond_signal()).
 #
 
 import argparse
@@ -127,7 +134,7 @@ def machine(floor, total):
             floor.boxes += 1
             floor.made += 1
             log(f"built box #{floor.made} ({floor.boxes} on the floor)")
-            floor.changed.notify()  # one new box, so wake one forklift
+            floor.changed.notify_all()
     with floor.lock:
         floor.done = True
         floor.changed.notify_all()  # every waiting forklift can go park
@@ -184,7 +191,7 @@ def load_truck(dock):
         log(f"loads {bay.truck} in bay {bay.number} "
             f"(room for {bay.room} more)")
         if bay.room == 0:
-            bay.full.notify()  # wake the truck parked here
+            bay.full.notify_all()  # wake the truck parked here
 
 
 def park(dock, capacity):
@@ -196,7 +203,7 @@ def park(dock, capacity):
         bay.truck = threading.current_thread().name
         bay.room = capacity
         log(f"parks in bay {bay.number}")
-        dock.has_room.notify(capacity)  # wake up to that many forklifts
+        dock.has_room.notify_all()
         return bay
 
 
@@ -207,7 +214,7 @@ def leave_when_full(dock, bay, capacity):
         bay.truck = None
         bay.shipped += capacity
         log(f"is full, pulls out of bay {bay.number}")
-        dock.has_empty_bay.notify()  # one bay opened, so wake one truck
+        dock.has_empty_bay.notify_all()
 
 
 def main():
