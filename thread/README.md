@@ -37,3 +37,13 @@ variable until another worker notifies it, instead of polling.
 ```
 ./factory.py --forklifts 3 --trucks 3 --bays 2 --trips 2 --capacity 3
 ```
+
+`factory.c` is the same program in C with pthreads (`pthread_cond_wait`,
+`pthread_cond_signal`), and `factoryxx.cpp` in C++17, where the floor and the
+dock are monitor classes built on `std::mutex`, `std::scoped_lock`,
+`std::unique_lock` and `std::condition_variable`. Both take the same options.
+
+```
+make factory && ./factory --forklifts 3 --trucks 3 --bays 2 --trips 2 --capacity 3
+make factoryxx && ./factoryxx --forklifts 3 --trucks 3 --bays 2 --trips 2 --capacity 3
+```
