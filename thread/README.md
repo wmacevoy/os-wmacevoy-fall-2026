@@ -59,6 +59,11 @@ calling thread doesn't hold the resource, so a forgotten lock fails loudly
 instead of racing. `retry()` and `balk()` handle blocks that find out partway
 through that they have to wait.
 
+`guarded.hpp` here is a copy. The maintained version lives at
+[wmacevoy/guarded-threads](https://github.com/wmacevoy/guarded-threads), with a
+Python port, more examples, tests, and a list of the pitfalls it does and
+doesn't prevent.
+
 ```
 make factoryxx_guarded && ./factoryxx_guarded --forklifts 3 --trucks 3 --bays 2 --trips 2 --capacity 3
 ```

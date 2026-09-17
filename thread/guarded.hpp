@@ -1,6 +1,9 @@
 //
 // guarded.hpp -- shared resources you wait on by condition, not by signal.
 //
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Warren MacEvoy -- https://github.com/wmacevoy/guarded-threads
+//
 //   auto hold = when([&] { return !q.empty(); }, q);   // wait, then hold q
 //   int x = q.pop();                                   // until end of scope
 //
