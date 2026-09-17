@@ -3,5 +3,6 @@ sum
 sumxx
 factory
 factoryxx
+factoryxx_guarded
 *.o
 *.dSYM/

@@ -47,3 +47,18 @@ dock are monitor classes built on `std::mutex`, `std::scoped_lock`,
 make factory && ./factory --forklifts 3 --trucks 3 --bays 2 --trips 2 --capacity 3
 make factoryxx && ./factoryxx --forklifts 3 --trucks 3 --bays 2 --trips 2 --capacity 3
 ```
+
+`factoryxx_guarded.cpp` is the C++ factory again, built on `guarded.hpp`, a
+small library of conditional critical regions. There are no condition
+variables and no notify calls: each step names the resources it needs and the
+condition it waits for, as in
+`auto hold = when([&] { return !q.empty(); }, q);`. `when()` locks everything
+in a fixed order, and while the condition is false it holds nothing and sleeps
+until some other thread writes one of those resources. Accessors throw if the
+calling thread doesn't hold the resource, so a forgotten lock fails loudly
+instead of racing. `retry()` and `balk()` handle blocks that find out partway
+through that they have to wait.
+
+```
+make factoryxx_guarded && ./factoryxx_guarded --forklifts 3 --trucks 3 --bays 2 --trips 2 --capacity 3
+```
