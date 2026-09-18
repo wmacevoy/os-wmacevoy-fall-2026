@@ -39,7 +39,7 @@ variable until another worker notifies it, instead of polling.
 ```
 
 `factory.c` is the same program in C with pthreads (`pthread_cond_wait`,
-`pthread_cond_signal`), and `factoryxx.cpp` in C++17, where the floor and the
+`pthread_cond_broadcast`), and `factoryxx.cpp` in C++17, where the floor and the
 dock are monitor classes built on `std::mutex`, `std::scoped_lock`,
 `std::unique_lock` and `std::condition_variable`. Both take the same options.
 
@@ -59,11 +59,19 @@ calling thread doesn't hold the resource, so a forgotten lock fails loudly
 instead of racing. `retry()` and `balk()` handle blocks that find out partway
 through that they have to wait.
 
-`guarded.hpp` here is a copy. The maintained version lives at
-[wmacevoy/guarded-threads](https://github.com/wmacevoy/guarded-threads), with a
-Python port, more examples, tests, and a list of the pitfalls it does and
-doesn't prevent.
-
 ```
 make factoryxx_guarded && ./factoryxx_guarded --forklifts 3 --trucks 3 --bays 2 --trips 2 --capacity 3
 ```
+
+`factory_guarded.py` is the Python factory rebuilt the same way, on
+`guarded.py`: `with when(lambda: not q.empty(), q):` holds `q` for the
+`with` block once the condition is true.
+
+```
+./factory_guarded.py --forklifts 3 --trucks 3 --bays 2 --trips 2 --capacity 3
+```
+
+`guarded.hpp` and `guarded.py` here are copies. The maintained versions live
+at [wmacevoy/guarded-threads](https://github.com/wmacevoy/guarded-threads),
+with more examples, tests, and a list of the pitfalls they do and don't
+prevent.
