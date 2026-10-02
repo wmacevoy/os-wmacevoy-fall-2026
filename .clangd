@@ -28,3 +28,8 @@ If:
   PathMatch: fork/.*\.c
 CompileFlags:
   Add: [-Wpedantic]
+---
+If:
+  PathMatch: mem/hft_omp\.cpp
+CompileFlags:
+  Add: [-Xclang, -fopenmp, -I/opt/homebrew/opt/libomp/include]

@@ -141,3 +141,34 @@ Things to look for: vector[id] is about 4x faster than std::map and 2x
 faster than std::unordered_map. `--window 1` is several times faster than
 `--window 100`, likely because 500 tickers × ~5.6 KB of window each (~2.8 MB)
 no longer fits in the faster caches.
+
+## hft_omp
+
+`hft_omp.cpp` is `hft` on several cores with OpenMP, always using the
+vector[id] lookup. One ticker's ticks must be applied in order, so the
+parallelism is across tickers, two ways:
+
+- `shard` — every thread reads the whole feed and applies only the ticks of
+  its own tickers (`id % threads`)
+- `demux` — one serial counting sort groups the ticks by ticker, then
+  `#pragma omp parallel for schedule(dynamic, 1)` hands whole tickers to
+  threads
+
+Results are bit-for-bit the serial ones and are checked against brute force
+(that check is itself a `parallel for` with `reduction`, using `omp simd`
+sums). `Stats` is `alignas(64)` to avoid false sharing between threads.
+
+```
+make hft_omp && ./hft_omp                 # macOS: needs brew install libomp
+make omp-run                              # in a Linux container (Dockerfile)
+make omp-run ARGS="--threads 4 --ticks 4000000"
+OMP_NUM_THREADS=2 ./hft_omp
+```
+
+Things to look for: the `limit` column. One ticker trades ~15% of all ticks,
+so no strategy can beat ~6.8x however many cores it gets, and `shard`'s fixed
+`id % threads` split caps it lower still. `demux` pays a serial sort first
+(Amdahl's law). Inside Docker Desktop, 8 threads can be slower than 4: the
+VM's vCPUs share the host with everything else. The feed differs between
+macOS and Linux because libc++ and libstdc++ implement the random
+distributions differently, even with the same seed.
